@@ -12,7 +12,7 @@ Paste this command into Terminal for a first install or an update.
 /bin/bash -ec 'script=$(/usr/bin/curl -fsSL --proto "=https" --proto-redir "=https" https://github.com/jiediking/codex-tps-app/releases/latest/download/install.sh); /bin/bash -c "$script"'
 ```
 
-**Updating from Terminal?** You can leave Codex Desktop open. To install **v0.1.4**, quit TPS, run the command, then reopen TPS. Starting with the **v0.1.5** installer, the command quits, updates, and reopens TPS for you.
+**Updating from Terminal?** You can run the same command while TPS is open. The installer automatically quits, updates, and reopens TPS. Codex Desktop can stay open during the update.
 
 **Using the DMG?** Quit TPS before replacing an existing copy. Open the DMG and drag **Codex TPS** into **Applications**.
 
@@ -24,7 +24,7 @@ macOS may show a warning on first open. The app is signed locally and has not be
 2. Open **Codex Desktop** if it’s closed.
 3. Click the TPS icon in the menu bar and check **Connections → Codex Desktop**. When it shows **Connected**, send a message in Codex to see live activity on the card.
 
-If Codex Desktop was already running when TPS opened, quit and reopen Codex Desktop to resume live updates. Starting in **v0.1.5**, that row shows **Restart Codex** when a restart is needed.
+If that row shows **Restart Codex**, quit and reopen Codex Desktop to resume live updates.
 
 **Using Codex in Terminal?** With TPS open, run `codex` in Terminal and start a chat.
 
