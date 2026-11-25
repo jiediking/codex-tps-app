@@ -1,0 +1,40 @@
+name: Build and package
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  macos:
+    runs-on: xcode-27
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Test
+        run: |
+          xcodebuild -project 'Codex TPS.xcodeproj' -scheme 'Codex TPS' \
+            -destination 'platform=macOS,arch=arm64' -parallel-testing-enabled NO \
+            -derivedDataPath "$RUNNER_TEMP/codex-tps-test" test
+      - name: Build universal app
+        run: |
+          xcodebuild -project 'Codex TPS.xcodeproj' -scheme 'Codex TPS' -configuration Release \
+            -destination 'generic/platform=macOS' -derivedDataPath "$RUNNER_TEMP/codex-tps-release" build
+      - name: Package
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        run: |
+          bash scripts/package-macos.sh \
+            "$RUNNER_TEMP/codex-tps-release/Build/Products/Release/Codex TPS.app" \
+            "$RUNNER_TEMP/codex-tps-assets" "$GITHUB_REPOSITORY"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        with:
+          name: macos-release
+          path: ${{ runner.temp }}/codex-tps-assets/
+          if-no-files-found: error
+          compression-level: 0

@@ -1,0 +1,147 @@
+#!/bin/bash
+set -euo pipefail
+
+version='@VERSION@'
+minimum_macos='@MIN_MACOS@'
+package_url='https://github.com/@REPO@/releases/download/v@VERSION@/Codex-TPS-macOS-universal.dmg'
+package_sha256='@DMG_SHA256@'
+bundle_id='local.codex-tps.app'
+app_name='Codex TPS.app'
+install_dir='/Applications'
+dmg_path=''
+
+fail() {
+  printf 'Codex TPS installer: %s\n' "$*" >&2
+  exit 1
+}
+
+while (( $# )); do
+  case "$1" in
+    --dmg)
+      [[ $# -ge 2 ]] || fail '--dmg needs a file path.'
+      dmg_path=$2
+      shift 2
+      ;;
+    --install-dir)
+      [[ $# -ge 2 ]] || fail '--install-dir needs a directory.'
+      install_dir=$2
+      shift 2
+      ;;
+    --help)
+      printf 'Usage: bash install.sh [--dmg FILE] [--install-dir DIRECTORY]\n'
+      exit
+      ;;
+    *) fail "Unknown option: $1" ;;
+  esac
+done
+
+[[ $(/usr/bin/uname -s) == Darwin ]] || fail 'This app requires macOS.'
+case "$(/usr/bin/uname -m)" in
+  arm64|x86_64) ;;
+  *) fail 'This app requires an Apple silicon or Intel Mac.' ;;
+esac
+[[ "$package_sha256" =~ ^[a-f0-9]{64}$ ]] || fail 'The installer is missing its package checksum.'
+version_pattern='^[0-9]{1,6}\.[0-9]{1,6}\.[0-9]{1,6}$'
+[[ "$version" =~ $version_pattern ]] || fail 'The installer is missing its app version.'
+
+version_at_least() {
+  local -a found required
+  local i left right
+  IFS=. read -r -a found <<< "$1"
+  IFS=. read -r -a required <<< "$2"
+  for i in 0 1 2; do
+    left=${found[i]:-0}
+    right=${required[i]:-0}
+    if (( 10#$left > 10#$right )); then return 0; fi
+    if (( 10#$left < 10#$right )); then return 1; fi
+  done
+  return 0
+}
+
+os_version=$(/usr/bin/sw_vers -productVersion)
+version_at_least "$os_version" "$minimum_macos" || fail "This version requires macOS $minimum_macos or later."
+install_dir=$(cd -- "$install_dir" && pwd -P) || fail 'The install directory must already exist.'
+destination="$install_dir/$app_name"
+lock="$install_dir/.codex-tps-install.lock"
+work=''
+stage=''
+attached=0
+locked=0
+complete=0
+
+cleanup() {
+  local status=$?
+  if [[ -n "$stage" && -d "$stage/previous.app" && $complete == 0 ]]; then
+    if [[ ! -e "$destination" && ! -L "$destination" ]]; then
+      /bin/mv -n "$stage/previous.app" "$destination" || true
+    fi
+    if [[ -e "$stage/previous.app" ]]; then
+      printf 'Your previous app is at %s\n' "$stage/previous.app" >&2
+      stage=''
+    fi
+  fi
+  if [[ -n "$stage" ]]; then rm -rf "$stage"; fi
+  if (( attached )) && ! /usr/bin/hdiutil detach "$work/mount" -quiet; then
+    printf 'The disk image is still mounted at %s\n' "$work/mount" >&2
+    work=''
+  fi
+  if [[ -n "$work" ]]; then rm -rf "$work"; fi
+  if (( locked )); then rmdir "$lock"; fi
+  exit "$status"
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+mkdir "$lock" 2>/dev/null || fail "Cannot start installation in $install_dir. Use the DMG in Finder if access is needed."
+locked=1
+if [[ -e "$destination" || -L "$destination" ]]; then
+  [[ -d "$destination" && ! -L "$destination" ]] || fail "Unexpected item at $destination."
+  existing_id=$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$destination/Contents/Info.plist") \
+    || fail 'The existing app identity could not be read.'
+  [[ "$existing_id" == "$bundle_id" ]] || fail "A different app already occupies $destination."
+  existing_version=$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$destination/Contents/Info.plist") \
+    || fail 'The existing app version could not be read.'
+  [[ "$existing_version" =~ $version_pattern ]] || fail 'The existing app version is invalid.'
+  version_at_least "$version" "$existing_version" || fail "Codex TPS $existing_version is newer than this installer."
+  processes=$(/bin/ps -axww -o pid= -o comm=) || fail 'Could not check whether Codex TPS is running.'
+  while read -r pid executable; do
+    [[ "$executable" == "$destination/Contents/MacOS/Codex TPS" ]] || continue
+    command=$(/bin/ps -ww -p "$pid" -o args=) || continue
+    # A retired lease helper can be waiting for the Codex process that inherited its launcher.
+    case "$command" in
+      "$executable --desktop-launch-lease local.codex-tps.desktop."*) continue ;;
+    esac
+    fail 'Quit Codex TPS before updating.'
+  done <<< "$processes"
+fi
+
+work=$(mktemp -d "${TMPDIR:-/tmp}/codex-tps-install.XXXXXX")
+if [[ -n "$dmg_path" ]]; then
+  [[ "$dmg_path" == /* ]] || dmg_path="$PWD/$dmg_path"
+  cp "$dmg_path" "$work/download.dmg"
+else
+  /usr/bin/curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' \
+    "$package_url" --output "$work/download.dmg"
+fi
+actual_sha256=$(/usr/bin/shasum -a 256 "$work/download.dmg")
+[[ "${actual_sha256%% *}" == "$package_sha256" ]] || fail 'The DMG checksum did not match.'
+mkdir "$work/mount"
+/usr/bin/hdiutil attach -readonly -nobrowse -mountpoint "$work/mount" -quiet "$work/download.dmg"
+attached=1
+source_app="$work/mount/$app_name"
+[[ -d "$source_app" && ! -L "$source_app" ]] || fail 'The DMG is missing the app bundle.'
+[[ $(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$source_app/Contents/Info.plist") == "$bundle_id" ]] \
+  || fail 'The downloaded app has an unexpected Bundle ID.'
+[[ $(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$source_app/Contents/Info.plist") == "$version" ]] \
+  || fail 'The downloaded app has an unexpected version.'
+
+stage=$(mktemp -d "$install_dir/.codex-tps-install.XXXXXX")
+/usr/bin/ditto "$source_app" "$stage/$app_name"
+/usr/bin/codesign --verify --deep --strict "$stage/$app_name"
+if [[ -d "$destination" ]]; then /bin/mv "$destination" "$stage/previous.app"; fi
+[[ ! -e "$destination" && ! -L "$destination" ]] || fail "Could not replace $destination."
+/bin/mv -n "$stage/$app_name" "$destination"
+[[ ! -e "$stage/$app_name" ]] || fail "Could not install into $destination."
+complete=1
+printf 'Codex TPS %s installed at %s\n' "$version" "$destination"

@@ -1,0 +1,105 @@
+name: Manual release
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Create a draft or publish a tested draft
+        type: choice
+        options: [draft, publish]
+        required: true
+      build_run_id:
+        description: Successful Build and package run on main
+        type: string
+        required: true
+      tested_dmg_sha256:
+        description: SHA-256 of the DMG tested on a Mac for publish
+        type: string
+
+permissions:
+  actions: read
+  contents: write
+
+concurrency:
+  group: macos-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify candidate and update release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          OPERATION: ${{ inputs.operation }}
+          BUILD_RUN_ID: ${{ inputs.build_run_id }}
+          TESTED_DMG_SHA256: ${{ inputs.tested_dmg_sha256 }}
+        run: |
+          set -euo pipefail
+          [[ "$BUILD_RUN_ID" =~ ^[0-9]+$ ]]
+          source=$(gh api "repos/$GH_REPO/actions/runs/$BUILD_RUN_ID" \
+            | jq -er --arg repo "$GH_REPO" \
+              'select(.path == ".github/workflows/build.yml" and .head_branch == "main"
+                and .head_repository.full_name == $repo and .conclusion == "success"
+                and (.event == "push" or .event == "workflow_dispatch")) | .head_sha')
+          [[ "$source" =~ ^[a-f0-9]{40}$ ]]
+          candidate="$RUNNER_TEMP/codex-tps-candidate"
+          gh run download "$BUILD_RUN_ID" --name macos-release --dir "$candidate"
+          cd "$candidate"
+          dmg=Codex-TPS-macOS-universal.dmg
+          checksums=SHA256SUMS.txt
+          sha256sum "$dmg" install.sh | cmp "$checksums" -
+          digest=$(sha256sum "$dmg" | cut -d ' ' -f 1)
+          version=$(sed -n "s/^version='\([0-9.]*\)'$/\1/p" install.sh)
+          [[ "$version" =~ ^[0-9]{1,6}\.[0-9]{1,6}\.[0-9]{1,6}$ ]]
+          tag="v$version"
+          grep -Fx "package_sha256='$digest'" install.sh
+          grep -Fx "package_url='https://github.com/$GH_REPO/releases/download/$tag/$dmg'" install.sh
+
+          release_notes="$RUNNER_TEMP/codex-tps-release-notes.md"
+          cat > "$release_notes" <<'NOTES'
+          Download the universal DMG, drag Codex TPS to Applications, then open it.
+          For an update, quit Codex TPS before replacing it. Codex can stay open.
+
+          Open Codex TPS before starting Codex Desktop for live updates. If Desktop
+          is already open, reopen it yourself when convenient. Interactive Codex CLI
+          sessions connect automatically.
+
+          The app is ad hoc signed and has not been notarized. Verify the download
+          with SHA256SUMS.txt and see [Apple’s first-open instructions](https://support.apple.com/102445).
+          NOTES
+
+          if [[ "$OPERATION" == draft ]]; then
+            {
+              printf '\n## Candidate verification\n\n'
+              printf 'Build %s at commit %s.\n\n' "$BUILD_RUN_ID" "$source"
+              printf 'DMG SHA-256: %s\n\n' "$digest"
+              cat <<'NOTES'
+          1. Sign in to download the draft assets. Verify both checksums, then test the DMG and install.sh with the downloaded DMG.
+          2. Open TPS and start Desktop independently. Verify Connected and a live rate from a simulated task. Repeat after quitting and reopening Desktop while TPS stays open.
+          3. Start interactive CLI and verify its connection separately.
+          4. Quit TPS during the simulated task. Confirm Desktop keeps running, the launch setting is restored, and the relay cleans up after Desktop exits.
+          5. Verify an update, then quit TPS, uninstall, and reinstall. Confirm the card defaults return and Codex keeps its own configuration and history.
+          NOTES
+            } >> "$release_notes"
+            gh release create "$tag" "$dmg" install.sh "$checksums" --draft \
+              --target "$source" --title "Codex TPS $version" --notes-file "$release_notes"
+          elif [[ "$OPERATION" == publish ]]; then
+            if [[ "$TESTED_DMG_SHA256" != "$digest" ]]; then
+              printf 'The tested DMG checksum does not match the candidate.\n' >&2
+              exit 1
+            fi
+            gh release view "$tag" --json isDraft,targetCommitish \
+              | jq -e --arg source "$source" '.isDraft and .targetCommitish == $source' || exit 1
+            draft="$RUNNER_TEMP/codex-tps-draft"
+            gh release download "$tag" --dir "$draft" || exit 1
+            for file in "$dmg" install.sh "$checksums"; do
+              cmp "$file" "$draft/$file" || exit 1
+            done
+            gh release edit "$tag" --draft=false --latest --notes-file "$release_notes"
+          else
+            printf 'Unknown release operation.\n' >&2
+            exit 1
+          fi
