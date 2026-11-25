@@ -60,13 +60,21 @@ jobs:
 
           release_notes="$RUNNER_TEMP/codex-tps-release-notes.md"
           cat > "$release_notes" <<'NOTES'
-          Download the universal DMG, drag Codex TPS to Applications, then open it.
-          When updating by DMG, quit Codex TPS before replacing it. The Terminal
-          installer can update a running TPS and reopen it. Codex can stay open.
+          ## Install or update
 
-          Open Codex TPS before starting Codex Desktop for live updates. If Desktop
-          is already open, reopen it yourself when convenient. Interactive Codex CLI
-          sessions connect automatically.
+          Paste this command into Terminal for a first install or an update.
+
+          ```sh
+          /bin/bash -ec 'script=$(/usr/bin/curl -fsSL --proto "=https" --proto-redir "=https" https://github.com/jiediking/codex-tps-app/releases/latest/download/install.sh); /bin/bash -c "$script"'
+          ```
+
+          **Updating from Terminal?** You can run the same command while TPS is open. The installer automatically quits, updates, and reopens TPS. Codex Desktop can stay open during the update.
+
+          **Using the DMG?** Quit TPS before replacing an existing copy. Open the DMG and drag **Codex TPS** into **Applications**, then open TPS.
+
+          ## Connect to Codex
+
+          Open TPS before starting Codex Desktop for live updates. If **Connections → Codex Desktop** shows **Restart Codex**, quit and reopen Codex Desktop to resume live updates. Interactive Codex CLI sessions connect automatically.
 
           The app is ad hoc signed and has not been notarized. Verify the download
           with SHA256SUMS.txt and see [Apple’s first-open instructions](https://support.apple.com/102445).
