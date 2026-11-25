@@ -493,7 +493,7 @@ struct MenuPopover: View {
 
     private func connection(_ client: CodexClient, info: ConnectionInfo) -> some View {
         let hasDetails = client == .desktop && (info.status == .connected || info.status == .paused || info.status == .pending
-            || info.status.isWarning)
+            || info.status == .restartRequired || info.status.isWarning)
         return VStack(alignment: .leading, spacing: 3) {
             HStack {
                 Text(client.label)

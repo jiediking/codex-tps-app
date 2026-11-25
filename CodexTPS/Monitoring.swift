@@ -251,6 +251,7 @@ final class CodexMonitor {
     private let cli: CLIStream
     private let desktop = DesktopReceiver()
     private var desktopApplication: NSRunningApplication?
+    private var desktopsBeforeLease = Set<RelayProcess>()
     private var desktopRelaySessions = Set<UUID>()
     private var timer: DispatchSourceTimer?
     private var lastRelayPacket: RelayPacket?
@@ -296,7 +297,11 @@ final class CodexMonitor {
     func beginDesktopSession() throws -> String {
         try queue.sync {
             closeDesktopEndpoint()
-            return try desktop.start(on: queue)
+            let endpoint = try desktop.start(on: queue)
+            desktopsBeforeLease = Set(DesktopTarget.runningApplications.compactMap {
+                RelayProcess($0.processIdentifier)
+            })
+            return endpoint
         }
     }
 
@@ -327,6 +332,7 @@ final class CodexMonitor {
 
     private func closeDesktopEndpoint() {
         desktop.stop()
+        desktopsBeforeLease.removeAll()
         desktopApplication = nil
         desktopRelaySessions.removeAll()
         resetDesktopProgress()
@@ -345,6 +351,8 @@ final class CodexMonitor {
             state = .paused
         } else if let desktopApplication {
             state = .running(desktopApplication.launchDate ?? .distantPast)
+        } else if desktopsBeforeLease.contains(where: \.isRunning) {
+            state = .restartRequired
         } else {
             state = .pending
         }

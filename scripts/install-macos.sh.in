@@ -68,9 +68,59 @@ stage=''
 attached=0
 locked=0
 complete=0
+existing_version=''
+original_identity=''
+reopen_previous=0
+
+running_tps_pids() {
+  local processes pid executable command
+  processes=$(/bin/ps -axww -o pid= -o comm=) || return 1
+  while read -r pid executable; do
+    [[ "$executable" == "$destination/Contents/MacOS/Codex TPS" ]] || continue
+    command=$(/bin/ps -ww -p "$pid" -o args=) || continue
+    # A retired helper may still be serving the running Codex Desktop session.
+    case "$command" in
+      "$executable --desktop-launch-lease local.codex-tps.desktop."*) continue ;;
+    esac
+    printf '%s\n' "$pid"
+  done <<< "$processes"
+}
+
+destination_is_original() {
+  if [[ -n "$original_identity" ]]; then
+    [[ -d "$destination" && ! -L "$destination" ]] &&
+      [[ $(/usr/bin/stat -f '%d:%i' "$destination") == "$original_identity" ]]
+  else
+    [[ ! -e "$destination" && ! -L "$destination" ]]
+  fi
+}
+
+request_tps_quit() {
+  /usr/bin/osascript -l JavaScript - "$bundle_id" "$destination" "$1" <<'JXA'
+ObjC.import("AppKit");
+
+function run([bundleID, path, pid]) {
+  const target = ObjC.unwrap($.NSURL.fileURLWithPath(path).URLByResolvingSymlinksInPath.path);
+  const apps = $.NSRunningApplication.runningApplicationsWithBundleIdentifier(bundleID);
+  for (let index = 0; index < apps.count; index++) {
+    const app = apps.objectAtIndex(index);
+    if (Number(app.processIdentifier) !== Number(pid)) continue;
+    if (ObjC.unwrap(app.bundleURL.URLByResolvingSymlinksInPath.path) !== target) {
+      throw new Error("The running Codex TPS does not match the update location.");
+    }
+    if (!app.terminate) {
+      throw new Error("macOS did not accept the quit request for the installed Codex TPS.");
+    }
+    return;
+  }
+  throw new Error("The running Codex TPS could not be verified.");
+}
+JXA
+}
 
 cleanup() {
   local status=$?
+  local running
   if [[ -n "$stage" && -d "$stage/previous.app" && $complete == 0 ]]; then
     if [[ ! -e "$destination" && ! -L "$destination" ]]; then
       /bin/mv -n "$stage/previous.app" "$destination" || true
@@ -87,6 +137,10 @@ cleanup() {
   fi
   if [[ -n "$work" ]]; then rm -rf "$work"; fi
   if (( locked )); then rmdir "$lock"; fi
+  if (( reopen_previous && !complete )) && destination_is_original &&
+     running=$(running_tps_pids) && [[ -z "$running" ]]; then
+    /usr/bin/open -a "$destination" || true
+  fi
   exit "$status"
 }
 trap cleanup EXIT
@@ -97,6 +151,7 @@ mkdir "$lock" 2>/dev/null || fail "Cannot start installation in $install_dir. Us
 locked=1
 if [[ -e "$destination" || -L "$destination" ]]; then
   [[ -d "$destination" && ! -L "$destination" ]] || fail "Unexpected item at $destination."
+  original_identity=$(/usr/bin/stat -f '%d:%i' "$destination") || fail 'The existing app could not be inspected.'
   existing_id=$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$destination/Contents/Info.plist") \
     || fail 'The existing app identity could not be read.'
   [[ "$existing_id" == "$bundle_id" ]] || fail "A different app already occupies $destination."
@@ -104,16 +159,6 @@ if [[ -e "$destination" || -L "$destination" ]]; then
     || fail 'The existing app version could not be read.'
   [[ "$existing_version" =~ $version_pattern ]] || fail 'The existing app version is invalid.'
   version_at_least "$version" "$existing_version" || fail "Codex TPS $existing_version is newer than this installer."
-  processes=$(/bin/ps -axww -o pid= -o comm=) || fail 'Could not check whether Codex TPS is running.'
-  while read -r pid executable; do
-    [[ "$executable" == "$destination/Contents/MacOS/Codex TPS" ]] || continue
-    command=$(/bin/ps -ww -p "$pid" -o args=) || continue
-    # A retired lease helper can be waiting for the Codex process that inherited its launcher.
-    case "$command" in
-      "$executable --desktop-launch-lease local.codex-tps.desktop."*) continue ;;
-    esac
-    fail 'Quit Codex TPS before updating.'
-  done <<< "$processes"
 fi
 
 work=$(mktemp -d "${TMPDIR:-/tmp}/codex-tps-install.XXXXXX")
@@ -139,9 +184,28 @@ source_app="$work/mount/$app_name"
 stage=$(mktemp -d "$install_dir/.codex-tps-install.XXXXXX")
 /usr/bin/ditto "$source_app" "$stage/$app_name"
 /usr/bin/codesign --verify --deep --strict "$stage/$app_name"
+destination_is_original || fail 'The installation location changed during the download. Try again.'
+if [[ -n "$existing_version" ]]; then
+  tps_pid=$(running_tps_pids) || fail 'Could not check whether Codex TPS is running.'
+  if [[ -n "$tps_pid" ]]; then
+    [[ "$tps_pid" =~ ^[0-9]+$ ]] || fail 'More than one Codex TPS process is running from this location.'
+    request_tps_quit "$tps_pid" || fail 'Could not quit Codex TPS. Try again.'
+    reopen_previous=1
+    for attempt in {1..80}; do
+      tps_pid=$(running_tps_pids) || fail 'Could not confirm that Codex TPS quit.'
+      [[ -n "$tps_pid" ]] || break
+      sleep 0.25
+    done
+    [[ -z "$tps_pid" ]] || fail 'Codex TPS is still running. The update stopped before replacing it.'
+  fi
+fi
+destination_is_original || fail 'The installation location changed before replacement. Try again.'
 if [[ -d "$destination" ]]; then /bin/mv "$destination" "$stage/previous.app"; fi
 [[ ! -e "$destination" && ! -L "$destination" ]] || fail "Could not replace $destination."
 /bin/mv -n "$stage/$app_name" "$destination"
 [[ ! -e "$stage/$app_name" ]] || fail "Could not install into $destination."
 complete=1
 printf 'Codex TPS %s installed at %s\n' "$version" "$destination"
+if [[ -n "$existing_version" ]]; then
+  /usr/bin/open -a "$destination" || fail 'The update was installed. Open Codex TPS from Applications.'
+fi

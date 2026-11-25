@@ -597,6 +597,11 @@ final class CodexTPSTests: XCTestCase {
         }
         XCTAssertEqual(status(false), .setup)
 
+        desktop.observe(.restartRequired)
+        XCTAssertEqual(status(false), .restartRequired)
+        XCTAssertEqual(status(false).title, "Restart Codex")
+        XCTAssertNil(desktop.launchedAt)
+
         desktop.observe(.pending)
         XCTAssertEqual(status(false), .pending)
 

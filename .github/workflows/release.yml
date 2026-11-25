@@ -61,7 +61,8 @@ jobs:
           release_notes="$RUNNER_TEMP/codex-tps-release-notes.md"
           cat > "$release_notes" <<'NOTES'
           Download the universal DMG, drag Codex TPS to Applications, then open it.
-          For an update, quit Codex TPS before replacing it. Codex can stay open.
+          When updating by DMG, quit Codex TPS before replacing it. The Terminal
+          installer can update a running TPS and reopen it. Codex can stay open.
 
           Open Codex TPS before starting Codex Desktop for live updates. If Desktop
           is already open, reopen it yourself when convenient. Interactive Codex CLI
@@ -81,7 +82,7 @@ jobs:
           2. Open TPS and start Desktop independently. Verify Connected and a live rate from a simulated task. Repeat after quitting and reopening Desktop while TPS stays open.
           3. Start interactive CLI and verify its connection separately.
           4. Quit TPS during the simulated task. Confirm Desktop keeps running, the launch setting is restored, and the relay cleans up after Desktop exits.
-          5. Verify an update, then quit TPS, uninstall, and reinstall. Confirm the card defaults return and Codex keeps its own configuration and history.
+          5. With TPS and Desktop running, install the update. Confirm TPS reopens, Desktop keeps running, and Connections shows Restart Codex until Desktop is reopened. Then verify uninstall and reinstall.
           NOTES
             } >> "$release_notes"
             gh release create "$tag" "$dmg" install.sh "$checksums" --draft \

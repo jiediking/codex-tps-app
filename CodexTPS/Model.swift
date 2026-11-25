@@ -27,7 +27,7 @@ enum Metric: String, CaseIterable, Identifiable {
 }
 
 enum ConnectionStatus: Equatable {
-    case checking, connected, notRunning, setup, pending, paused, unavailable, unconfirmed
+    case checking, connected, notRunning, setup, pending, restartRequired, paused, unavailable, unconfirmed
 
     var isWarning: Bool { self == .unavailable || self == .unconfirmed }
 
@@ -38,6 +38,7 @@ enum ConnectionStatus: Equatable {
         case .notRunning: "Not running"
         case .setup: "Live Off"
         case .pending: "Waiting for Codex"
+        case .restartRequired: "Restart Codex"
         case .paused: "Paused"
         case .unavailable: "Source unavailable"
         case .unconfirmed: "Activity unconfirmed"
@@ -63,7 +64,7 @@ struct ConnectionRunState {
 
 struct DesktopConnectionState {
     enum Launch: Equatable {
-        case setup, pending, paused, running(Date)
+        case setup, pending, restartRequired, paused, running(Date)
     }
 
     private var launch: Launch = .setup
@@ -91,6 +92,7 @@ struct DesktopConnectionState {
         switch launch {
         case .setup: return .setup
         case .pending: return .pending
+        case .restartRequired: return .restartRequired
         case .paused: return .paused
         case .running:
             let status = connection.status(running: true, available: available, unconfirmed: false)
@@ -295,7 +297,7 @@ final class AppState {
 
     func preparePopover() {
         cardStylesOpen = false
-        connectionsOpen = false
+        connectionsOpen = connections[.desktop]?.status == .restartRequired
         desktopDetailsOpen = false
     }
 }
