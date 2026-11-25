@@ -30,7 +30,7 @@ macOS may show a warning on first open. The app is signed locally and has not be
 
 ![Three simulated chats. Two start active. One finishes and moves below the chat that’s still running.](docs/media/demo.gif)
 
-*Simulated chats and speeds.* [Watch the MP4](docs/media/demo.mp4)
+*Simulated chats and speeds.*
 
 ## Quit or uninstall
 
@@ -41,7 +41,7 @@ Choose **Quit** from the TPS menu. Codex can keep running. To uninstall, move TP
 
 - **Waiting for Codex** means TPS is ready for the next Desktop launch. Keep TPS open and it reconnects the next time you open Codex.
 - TPS processes local chat titles, activity, and usage on your Mac. Quitting TPS removes its temporary Desktop launch setting. Any relay still in use cleans up when the current Codex session ends.
-- The pin keeps the card on top. The TPS menu lets you show [average speed, cache hit rate, and context usage](docs/media/card-metrics.png). A normal TPS quit resets its card preferences.
+- The pin keeps the card on top. The TPS menu lets you show average speed, cache hit rate, and context usage. A normal TPS quit resets its card preferences.
 
 </details>
 
