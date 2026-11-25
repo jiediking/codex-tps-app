@@ -1,6 +1,6 @@
 # Codex TPS
 
-A small Mac desktop card that shows which Codex chats are active and how fast Codex is replying.
+A small Mac desktop card that shows active chats and reply speeds from both Codex Desktop and Codex CLI.
 
 **[Download the DMG](https://github.com/jiediking/codex-tps-app/releases/latest/download/Codex-TPS-macOS-universal.dmg)** · macOS 14+ · Apple silicon and Intel
 
@@ -20,13 +20,9 @@ macOS may show a warning on first open. The app is signed locally and has not be
 
 ## Connect to Codex
 
-1. Open **Codex TPS** from **Applications** if it’s closed.
-2. Open **Codex Desktop** if it’s closed.
-3. Click the TPS icon in the menu bar and check **Connections → Codex Desktop**. When it shows **Connected**, send a message in Codex to see live activity on the card.
+Open **Codex TPS**, then open **Codex Desktop** or run `codex` in Terminal. Send a message in either to see the chat on the same TPS card.
 
-If that row shows **Restart Codex**, quit and reopen Codex Desktop to resume live updates.
-
-**Using Codex in Terminal?** With TPS open, run `codex` in Terminal and start a chat.
+**Codex CLI** connects automatically. If **Connections → Codex Desktop** shows **Restart Codex**, quit and reopen Codex Desktop to resume live updates.
 
 ## Read the card
 
