@@ -4,13 +4,13 @@ A small Mac desktop card that shows which Codex chats are active and how fast Co
 
 **[Download the DMG](https://github.com/jiediking/codex-tps-app/releases/latest/download/Codex-TPS-macOS-universal.dmg)** · macOS 14+ · Apple silicon and Intel
 
+**Updating?** Choose **Quit** from the Codex TPS menu before installing, then reopen TPS from **Applications**. Codex Desktop can stay open during the update. If it’s already open, quit and reopen it after TPS is running to resume live updates.
+
 **Install in one command.** Paste this into Terminal.
 
 ```sh
 /bin/bash -ec 'script=$(/usr/bin/curl -fsSL --proto "=https" --proto-redir "=https" https://github.com/jiediking/codex-tps-app/releases/latest/download/install.sh); /bin/bash -c "$script"'
 ```
-
-Both options install Codex TPS in **Applications**. If you’re updating, quit TPS first. Codex can stay open.
 
 ## Get started
 
