@@ -7,7 +7,7 @@ A small Mac desktop card that shows which Codex chats are active and how fast Co
 **Install in one command.** Paste this into Terminal.
 
 ```sh
-/bin/bash -ec 'installer=$(mktemp -t codex-tps); trap "rm -f -- \"\$installer\"" EXIT; /usr/bin/curl -fsSL --proto "=https" --proto-redir "=https" https://github.com/jiediking/codex-tps-app/releases/latest/download/install.sh -o "$installer"; /bin/bash "$installer"'
+/bin/bash -ec 'script=$(/usr/bin/curl -fsSL --proto "=https" --proto-redir "=https" https://github.com/jiediking/codex-tps-app/releases/latest/download/install.sh); /bin/bash -c "$script"'
 ```
 
 Both options install Codex TPS in **Applications**. If you’re updating, quit TPS first. Codex can stay open.
