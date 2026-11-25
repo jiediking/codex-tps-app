@@ -4,23 +4,29 @@ A small Mac desktop card that shows which Codex chats are active and how fast Co
 
 **[Download the DMG](https://github.com/jiediking/codex-tps-app/releases/latest/download/Codex-TPS-macOS-universal.dmg)** · macOS 14+ · Apple silicon and Intel
 
-**Updating?** Choose **Quit** from the Codex TPS menu before installing, then reopen TPS from **Applications**. Codex Desktop can stay open during the update. If it’s already open, quit and reopen it after TPS is running to resume live updates.
+## Install or update
 
-**Install in one command.** Paste this into Terminal.
+Paste this command into Terminal for a first install or an update.
 
 ```sh
 /bin/bash -ec 'script=$(/usr/bin/curl -fsSL --proto "=https" --proto-redir "=https" https://github.com/jiediking/codex-tps-app/releases/latest/download/install.sh); /bin/bash -c "$script"'
 ```
 
-## Get started
+**Updating from Terminal?** You can leave Codex Desktop open. To install **v0.1.4**, quit TPS, run the command, then reopen TPS. Starting with the **v0.1.5** installer, the command quits, updates, and reopens TPS for you.
 
-1. **Using the DMG?** Open the downloaded file and drag **Codex TPS** into **Applications**.
-2. Open **Codex TPS** from **Applications**.
-3. Open **Codex Desktop**. If it’s already open, reopen it when convenient. Click the TPS icon in the menu bar and open **Connections**. When you see **Connected**, send a message in Codex to see the chat’s activity on the card.
-
-**Using Codex in Terminal?** With TPS open, run `codex` in Terminal and start a chat.
+**Using the DMG?** Quit TPS before replacing an existing copy. Open the DMG and drag **Codex TPS** into **Applications**.
 
 macOS may show a warning on first open. The app is signed locally and has not been notarized. [Apple’s first-open instructions](https://support.apple.com/102445)
+
+## Connect to Codex
+
+1. Open **Codex TPS** from **Applications** if it’s closed.
+2. Open **Codex Desktop** if it’s closed.
+3. Click the TPS icon in the menu bar and check **Connections → Codex Desktop**. When it shows **Connected**, send a message in Codex to see live activity on the card.
+
+If Codex Desktop was already running when TPS opened, quit and reopen Codex Desktop to resume live updates. Starting in **v0.1.5**, that row shows **Restart Codex** when a restart is needed.
+
+**Using Codex in Terminal?** With TPS open, run `codex` in Terminal and start a chat.
 
 ## Read the card
 
