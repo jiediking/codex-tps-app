@@ -195,6 +195,97 @@ final class WindowLayoutTests: XCTestCase {
         await assertEventually("Animation did not resume after showing the card.") { state.shouldAnimateCard }
     }
 
+    @MainActor
+    func testDisplayRefreshKeepsInMemoryDragPositionOnTheSameDisplay() async throws {
+        let screen = try XCTUnwrap(NSScreen.screens.first)
+        let visible = screen.visibleFrame
+        guard visible.width >= 650, visible.height >= 420 else {
+            throw XCTSkip("Fixture needs room on the display.")
+        }
+        let state = AppState(defaults: try isolatedDefaults())
+        let card = CardWindow(state: state)
+        defer { card.panel.orderOut(nil) }
+        let size = card.panel.frame.size
+        let origin = CGPoint(x: visible.midX - size.width / 2, y: visible.midY - size.height / 2)
+        card.panel.setFrameOrigin(origin)
+        let dragged = card.panel.frame
+
+        NotificationCenter.default.post(name: NSApplication.didChangeScreenParametersNotification, object: NSApp)
+        await drainLayout()
+
+        XCTAssertEqual(card.panel.frame.minX, dragged.minX, accuracy: 1)
+        XCTAssertEqual(card.panel.frame.maxY, dragged.maxY, accuracy: 1)
+    }
+
+    @MainActor
+    func testCardRetainsSavedCornerWhenDisplayIDIsUnavailable() throws {
+        let screen = try XCTUnwrap(NSScreen.screens.first)
+        let visible = screen.visibleFrame
+        guard visible.width >= 650, visible.height >= 420 else {
+            throw XCTSkip("Fixture needs room on the display.")
+        }
+        let displayIDs = Set(NSScreen.screens.compactMap(CardPlacement.id(for:)))
+        let missingID = try XCTUnwrap((1...UInt32(displayIDs.count + 1)).first { !displayIDs.contains($0) })
+        let topLeft = CGPoint(x: visible.minX + visible.width / 4, y: visible.maxY - visible.height / 4)
+        let defaults = try isolatedDefaults()
+        defaults.set(["screen": missingID, "x": topLeft.x, "top": topLeft.y], forKey: "CardPlacement")
+
+        let card = CardWindow(state: AppState(defaults: defaults), defaults: defaults)
+        defer { card.panel.orderOut(nil) }
+
+        XCTAssertEqual(card.panel.frame.minX, topLeft.x, accuracy: 1)
+        XCTAssertEqual(card.panel.frame.maxY, topLeft.y, accuracy: 1)
+
+        // A delayed move notification from the fallback layout must keep the original display preference.
+        card.windowDidMove(Notification(name: NSWindow.didMoveNotification, object: card.panel))
+        XCTAssertEqual(defaults.dictionary(forKey: "CardPlacement")?["screen"] as? UInt32, missingID)
+    }
+
+    @MainActor
+    func testWakeRestoresDraggedCardAfterTheWindowServerMovesIt() async throws {
+        let screen = try XCTUnwrap(NSScreen.screens.first)
+        let visible = screen.visibleFrame
+        guard visible.width >= 650, visible.height >= 420 else {
+            throw XCTSkip("Fixture needs room on the display.")
+        }
+        let workspace = NSWorkspace.shared
+        for pinned in [false, true] {
+            let defaults = try isolatedDefaults()
+            let state = AppState(defaults: defaults)
+            let card = CardWindow(state: state, defaults: defaults)
+            defer { card.panel.orderOut(nil) }
+            let initial = card.panel.frame
+            let dragged = CGPoint(x: visible.midX - initial.width / 2, y: visible.midY - initial.height / 2)
+            let moved = Notification(name: NSWindow.didMoveNotification, object: card.panel)
+            card.panel.setFrameOrigin(dragged)
+            card.windowDidMove(moved)
+
+            state.isPinned = pinned
+            card.refresh()
+            let beforeSleep = card.panel.frame
+
+            workspace.notificationCenter.post(name: NSWorkspace.willSleepNotification, object: workspace)
+            card.panel.setFrameOrigin(initial.origin)
+            card.windowDidMove(moved)
+            NotificationCenter.default.post(name: NSApplication.didChangeScreenParametersNotification, object: NSApp)
+            workspace.notificationCenter.post(name: NSWorkspace.didWakeNotification, object: workspace)
+            card.windowDidMove(moved)
+            await drainLayout()
+
+            XCTAssertEqual(card.panel.frame.minX, beforeSleep.minX, accuracy: 1, "Pinned: \(pinned)")
+            XCTAssertEqual(card.panel.frame.maxY, beforeSleep.maxY, accuracy: 1, "Pinned: \(pinned)")
+            XCTAssertEqual(card.panel.isMovable, !pinned)
+
+            if !pinned {
+                let newOrigin = CGPoint(x: dragged.x + 24, y: dragged.y)
+                card.panel.setFrameOrigin(newOrigin)
+                card.windowDidMove(moved)
+                let savedX = try XCTUnwrap(defaults.dictionary(forKey: "CardPlacement")?["x"] as? Double)
+                XCTAssertEqual(savedX, newOrigin.x, accuracy: 1)
+            }
+        }
+    }
+
     private func isolatedDefaults() throws -> UserDefaults {
         let suite = "local.codex-tps.layout-test.\(UUID())"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))

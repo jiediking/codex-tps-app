@@ -48,8 +48,10 @@ final class CardWindow: NSObject, NSWindowDelegate {
     private let host: CardHostingView
     private let state: AppState
     private let defaults: UserDefaults?
-    private var lastPlacement: [String: Any]?
+    private var lastPlacement: (screenID: UInt32?, topLeft: CGPoint)?
+    private var layoutFrame: CGRect?
     private var updatingFrame = false
+    private var isSleeping = false
     private var needsPlacementRestore = true
     private var preferredScale: CGFloat
     private var effectiveScale: CGFloat = 1
@@ -60,7 +62,11 @@ final class CardWindow: NSObject, NSWindowDelegate {
     init(state: AppState, defaults: UserDefaults? = nil) {
         self.state = state
         self.defaults = defaults
-        lastPlacement = defaults?.dictionary(forKey: "CardPlacement")
+        if let saved = defaults?.dictionary(forKey: "CardPlacement"),
+           let x = saved["x"] as? Double, let top = saved["top"] as? Double,
+           x.isFinite, top.isFinite {
+            lastPlacement = (saved["screen"] as? UInt32, CGPoint(x: x, y: top))
+        }
         preferredScale = CardPlacement.scale(CGFloat(defaults?.double(forKey: "CardScale") ?? 0))
         panel = DesktopPanel(contentRect: NSRect(x: 0, y: 0, width: 360, height: 130),
                              styleMask: [.borderless, .nonactivatingPanel], backing: .buffered,
@@ -84,11 +90,19 @@ final class CardWindow: NSObject, NSWindowDelegate {
         configureContent()
         NotificationCenter.default.addObserver(self, selector: #selector(screensChanged),
                                                name: NSApplication.didChangeScreenParametersNotification, object: nil)
+        let workspace = NSWorkspace.shared.notificationCenter
+        workspace.addObserver(self, selector: #selector(prepareForSleep),
+                              name: NSWorkspace.willSleepNotification, object: nil)
+        workspace.addObserver(self, selector: #selector(restoreAfterWake),
+                              name: NSWorkspace.didWakeNotification, object: nil)
         refresh()
         observeLayoutState()
     }
 
-    deinit { NotificationCenter.default.removeObserver(self) }
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+        NSWorkspace.shared.notificationCenter.removeObserver(self)
+    }
 
     private func observeLayoutState() {
         withObservationTracking {
@@ -111,6 +125,7 @@ final class CardWindow: NSObject, NSWindowDelegate {
     }
 
     func refresh() {
+        guard !isSleeping else { return }
         if !state.isPinned && !panel.isMovable {
             preferredScale = effectiveScale
             unpinnedHeightLimit = state.maximumCardHeight
@@ -207,16 +222,23 @@ final class CardWindow: NSObject, NSWindowDelegate {
     }
 
     private func restorePlacement() {
-        let saved = lastPlacement
-        let screen = NSScreen.screens.first { CardPlacement.id(for: $0) == saved?["screen"] as? UInt32 }
-        guard let target = screen ?? NSScreen.screens.first else { return }
-        needsPlacementRestore = false
+        let screens = NSScreen.screens
+        let savedID = lastPlacement?.screenID
+        let topLeft = lastPlacement?.topLeft
+        let savedScreen = savedID.flatMap { id in screens.first { CardPlacement.id(for: $0) == id } }
+        let screenAtCorner = topLeft.flatMap { corner in
+            let insideCard = CGPoint(x: corner.x, y: corner.y - 1)
+            return screens.first { $0.frame.contains(insideCard) }
+        }
+        guard let target = savedScreen ?? screenAtCorner ?? screens.first else { return }
         let visible = target.visibleFrame
-        let x = screen != nil ? saved?["x"] as? Double : nil
-        let top = screen != nil ? saved?["top"] as? Double : nil
-        let topLeft = CGPoint(x: x ?? visible.minX + 24, y: top ?? visible.maxY - 24)
-        guard x != nil, top != nil else {
-            resize(on: target, restoring: topLeft)
+        guard !visible.isEmpty else { return }
+        defer {
+            layoutFrame = panel.frame
+            needsPlacementRestore = false
+        }
+        guard let topLeft else {
+            resize(on: target, restoring: CGPoint(x: visible.minX + 24, y: visible.maxY - 24))
             return
         }
         let scale = fittingScale(in: visible.size)
@@ -231,11 +253,14 @@ final class CardWindow: NSObject, NSWindowDelegate {
     private func setFrame(_ frame: CGRect) {
         updatingFrame = true
         panel.setFrame(frame, display: true)
+        layoutFrame = panel.frame
         updatingFrame = false
     }
 
     func windowDidMove(_ notification: Notification) {
-        guard state.isCardVisible, !updatingFrame, resizeStart == nil else { return }
+        guard state.isCardVisible, !isSleeping, !needsPlacementRestore, !updatingFrame,
+              resizeStart == nil, panel.frame != layoutFrame else { return }
+        layoutFrame = nil
         savePlacement()
         if unpinnedHeightLimit != nil || state.isExpanded {
             unpinnedHeightLimit = nil
@@ -245,16 +270,31 @@ final class CardWindow: NSObject, NSWindowDelegate {
 
     private func savePlacement() {
         guard let screen = panel.screen, let id = CardPlacement.id(for: screen) else { return }
-        lastPlacement = ["screen": id, "x": panel.frame.minX, "top": panel.frame.maxY]
-        defaults?.set(lastPlacement, forKey: "CardPlacement")
+        let topLeft = CGPoint(x: panel.frame.minX, y: panel.frame.maxY)
+        lastPlacement = (id, topLeft)
+        defaults?.set(["screen": id, "x": Double(topLeft.x), "top": Double(topLeft.y)], forKey: "CardPlacement")
+    }
+
+    @objc private func prepareForSleep() {
+        if lastPlacement == nil && panel.isVisible { savePlacement() }
+        isSleeping = true
+        resizeStart = nil
+    }
+
+    @objc private func restoreAfterWake() {
+        isSleeping = false
+        screensChanged()
     }
 
     @objc private func screensChanged() {
         resizeStart = nil
         unpinnedHeightLimit = nil
-        if !state.isPinned { needsPlacementRestore = true }
-        refresh()
-        if state.isPinned && panel.isVisible { savePlacement() }
+        needsPlacementRestore = true
+        // Let AppKit finish moving windows for this display configuration before restoring the card.
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.needsPlacementRestore else { return }
+            self.refresh()
+        }
     }
 }
 
